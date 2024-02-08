@@ -1,6 +1,7 @@
 //this method is used to classify different notes according to the dimensions, not the relationship between different notes
 
 import { Editor, TLShapeId, createShapeId } from '@tldraw/tldraw'
+import { TLFrameShape } from '@tldraw/editor'
 import { ResponseShape } from '../ResponseShape/ResponseShape'
 import { getSelectionAsImageDataUrl } from './getSelectionAsImageDataUrl'
 import {
@@ -74,7 +75,7 @@ Note you should use node id provided to you in the input JSON object. Also, the 
 
 `
 
-export async function generateGroups (editor: Editor, dimensions: string[]) {
+export async function generateGroups (editor: Editor, shape: TLFrameShape, dimensions: string[]) {
 	// we can't make anything real if there's nothing selected
 	const selectedShapes = editor.getSelectedShapes()
 	if (selectedShapes.length === 0) {
@@ -82,7 +83,7 @@ export async function generateGroups (editor: Editor, dimensions: string[]) {
 	}
 
 	// first, we build the prompt that we'll send to openai.
-	const prompt = await buildPromptForOpenAi(editor, dimensions)
+	const prompt = await buildPromptForOpenAi(editor, shape, dimensions)
 
 	// TODO: create effect to show loading edges
 
@@ -126,25 +127,30 @@ export async function generateGroups (editor: Editor, dimensions: string[]) {
 
 
 
-async function buildPromptForOpenAi (editor: Editor, dimensions: string[]): Promise<GPT4Message[]> {
+async function buildPromptForOpenAi (editor: Editor, shape: TLFrameShape, dimensions: string[]): Promise<GPT4Message[]> {
     if (dimensions.length == 0){
         throw new Error('Please specify the dimensions.')
     }
     // TODO
 	// get the text from each note on the frame
-	// const notesAndDimensions = getSelectionAsText(editor, dimensions)
+	const notes = getNotes(editor, shape)
 
 	// the user messages describe what the user has done and what they want to do next. they'll get
 	// combined with the system prompt to tell gpt-4 what we'd like it to do.
 	const userMessages: MessageContent = [
 		{
 			type: 'text',
-			text: 'Here are dimensions and the thinking notes. The "dimension" key shows the list of dimensions, and the "notes" key shows a list of JSON format where text means the note content and id means the note id. Please group the notes according to the dimensions and return a json file that contains all the classes and the specific classification result',
+			text: 'Here are dimensions and the thinking notes. The first is the list of dimension, and the second is a list of JSON format where text means the note content and id means the note id. Please group the notes according to the dimensions and return a json file that contains all the classes and the specific classification result',
+		},
+        {
+			// send the text of all selected shapes, so that GPT can use it as a reference (if anything is hard to see)
+			type: 'text',
+			text: JSON.stringify(dimensions) !== '' ? JSON.stringify(dimensions) : 'Oh, it looks like there was not any note and dimension.',
 		},
 		{
 			// send the text of all selected shapes, so that GPT can use it as a reference (if anything is hard to see)
 			type: 'text',
-			text: notesAndDimensions !== '' ? notesAndDimensions : 'Oh, it looks like there was not any note and dimension.',
+			text: notes !== '' ? notes : 'Oh, it looks like there was not any note and dimension.',
 		},
 	]
 
@@ -156,27 +162,35 @@ async function buildPromptForOpenAi (editor: Editor, dimensions: string[]): Prom
 	]
 }
 
-function getSelectionAsText (editor: Editor) {
-	const selectedShapeIds = editor.getSelectedShapeIds()
-	const selectedShapeDescendantIds = editor.getShapeAndDescendantIds(selectedShapeIds)
+function getNotes (editor: Editor, shape: TLFrameShape) {
+    function fetchTextsFromFrame(shapeId: string): Array<{ text: string; id: string }>{
+        const noteShapeDescendantIds = editor.getSortedChildIdsForParent(shapeId)
 
-	const texts = Array.from(selectedShapeDescendantIds)
-		.map(id => {
-			const shape = editor.getShape(id)
-			if (!shape) return null
-			if (
-				shape.type === 'text' ||
-				shape.type === 'geo' ||
-				shape.type === 'arrow' ||
-				shape.type === 'note' ||
-				shape.type === 'node'
-			) {
-				// @ts-expect-error
-				return { text: shape.props.text, id: shape.id }
-			}
-			return { text: null, id: null }
-		})
-		.filter(v => v.text !== null && v.text !== '')
+        const textNodes = noteShapeDescendantIds.flatMap(id => {
+            const shape = editor.getShape(id)
+            if (!shape) return []
+            if (
+                shape.type === 'text' ||
+                shape.type === 'geo' ||
+                shape.type === 'arrow' ||
+                shape.type === 'note' ||
+                shape.type === 'node'
+            ){
+                return [{ text: shape.props.text, id: shape.id }]
+            }
+            // if the shape type is frame, recursively dive into the frame and grab the text
+            if (shape.type === 'new_frame'){
+                return fetchTextsFromFrame(shape.id)
+            }
+            return []
+        })
 
-	return JSON.stringify(texts)
+        return textNodes
+    }
+
+    const texts = fetchTextsFromFrame(shape.id)
+
+    const filterTexts = texts.filter(v => v.text !== null && v.text !=='')
+
+	return JSON.stringify(filterTexts)
 }
