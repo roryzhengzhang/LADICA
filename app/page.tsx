@@ -202,7 +202,7 @@ export default function App() {
 						
 					}
 				}}
-				store={store}
+				//store={store}
 				onDragOver={onDragOver}
 				onDrop={onDrop}
 			>
