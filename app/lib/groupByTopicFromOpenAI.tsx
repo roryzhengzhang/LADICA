@@ -90,7 +90,7 @@ async function buildPromptForOpenAi (editor, ideas, topic) {
 	const userMessages: MessageContent = [
 		{
 			type: 'text',
-			text: 'Here are ideas created by students, they are presented in a JSON format as described. Please suggest group direction that students can cluster them for further analysis.',
+			text: 'The first text is the ideas created by students, they are presented in a JSON format as described. The second text is the list of topics. Please suggest group direction that students can cluster them for further analysis.',
 		},
 		{
 			// send the text of all selected shapes, so that GPT can use it as a reference (if anything is hard to see)
